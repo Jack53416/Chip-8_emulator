@@ -116,102 +116,129 @@ class Chip8(object):
             self._memory[0x200:0x200 + len(rom)] = rom
 
     def emulate_cycle(self):
-        pass
+        self._fetch()
+        self._decode()
+        self._pc = self._pc + self.INSTRUCTION_SIZE
 
     def _fetch(self):
-        pass
+        self._opCode = bytes(self._memory[self._pc: self._pc + self.INSTRUCTION_SIZE])
 
     def _decode(self):
-        pass
+        code = self._opCode[0] >> 4
+        try:
+            self._decoder[code](self._opCode)
+        except KeyError:
+            # invalid instruction
+            print("Invalid op-code!!")
+            pass
+        except TypeError:
+            # invalid nr of arguments
+            print("Invalid op-code parameters!")
+            pass
 
-    def _decode_arithmetic(self, params: bytes):
-        x: int = params[0] & 0x0F
-        y: int = params[1] & 0xF0
+    def _decode_arithmetic(self):
+        x: int = self._opCode[0] & 0x0F
+        y: int = self._opCode[1] >> 4
 
-        code = 0x8 << 4 | (params[1] & 0x0F)
+        code = 0x8 << 4 | (self._opCode[1] & 0x0F)
 
         return self._decoder[code](x, y)
 
-    def _decode_keys(self, params: bytes):
-        code = 0xE << 4 | params[1]
-        x = params[0] & 0x0F
+    def _decode_keys(self):
+        code = 0xE << 4 | self._opCode[1]
+        x = self._opCode[0] & 0x0F
 
         return self._decoder[code](x)
 
-    def _decode_system(self, params: bytes):
-        code = 0xF << 4 | params[1]
-        x = params[0] & 0x0F
+    def _decode_system(self):
+        code = 0xF << 4 | self._opCode[1]
+        x = self._opCode[0] & 0x0F
 
         return self._decoder[code](x)
 
-    def clear_scr(self, params: bytes):
+    def clear_scr(self):
         """00E0 Clear the screen"""
         pass
 
-    def ret_from_sub(self, params: bytes):
+    def ret_from_sub(self):
         """00EE return from subroutine call"""
-        pass
 
-    def jump(self, params: bytes):
-        """1xxx jum to address xxx"""
-        pass
+        self._pc = self._stack.pop()
+        self._stackPtr = self._stackPtr - 1
 
-    def jsr(self, params: bytes):
+    def jump(self, address: int):
+        """1xxx jump to address xxx"""
+
+        self._pc = address
+
+    def jsr(self, address: int):
         """2xxx jump to subroutine at address xxx """
-        pass
 
-    def skip_equal(self, params: bytes):
+        self._stackPtr = self._stackPtr + 1
+        self._stack.append(self._pc)
+        self._pc = address
+
+    def skip_equal(self, reg: int, value: int):
         """3rxx skip if register r = constant xx """
-        pass
 
-    def skip_nequal(self, params: bytes):
+        if self._registers[reg] == value:
+            self._pc = self._pc + 2
+
+    def skip_nequal(self, reg: int, value: int):
         """4rxx Skip if register r != constant xx"""
-        pass
 
-    def skip_reg_equal(self, params: bytes):
+        if self._registers[reg] != value:
+            self._pc = self._pc + 2
+
+    def skip_reg_equal(self, r1: int, r2: int):
         """5ry0 Skip if register r = register y"""
-        pass
+
+        if self._registers[r1] == self._registers[r2]:
+            self._pc = self._pc + 2
 
     def mov(self, params: bytes):
-        """6rxxx move constant xxx to register r"""
-        pass
+        """6rxx move constant xxx to register r"""
+        # Error Handling !!
+        reg = params[0] & 0x0F
+        const = params[1]
+        self._registers[reg] = bytes([const])
 
     def add_constant(self, params: bytes):
         """7rxx add constant to register r, No carry generated"""
         pass
 
-    def mov_reg(self, params: bytes):
+    def mov_reg(self, reg_x: int, reg_y: int):
         """8ry0 move register vy into vr"""
         pass
 
-    def logic_or(self, params: bytes):
+    def logic_or(self, reg_x: int, reg_y: int):
         """8ry1 OR register vy into register vx"""
         pass
 
-    def logic_and(self, params: bytes):
+    def logic_and(self, reg_x: int, reg_y: int):
         """8ry2 AND register vy into register vx"""
         pass
 
-    def logic_xor(self, params: bytes):
+    def logic_xor(self, reg_x: int, reg_y: int):
         """8ry3 XOR register ry into register rx"""
 
-    def add(self, params: bytes):
+    def add(self, reg_x: int, reg_y: int):
         """8ry4 add register vy to vr,carry in vf """
         pass
 
-    def sub(self, params: bytes):
+    def sub(self, reg_x: int, reg_y: int):
         """8ry5 subtract register vy from vr,borrow in vf, 	vf set to 1 if borrows"""
         pass
 
-    def shift_right(self, params: bytes):
+    def shift_right(self, reg_x: int, reg_y: int):
         """8r06 shift register vy right, bit 0 goes into register vf"""
         pass
 
-    def rsb(self, params: bytes):
+    def rsb(self, reg_x: int, reg_y: int):
         """8ry7 subtract register vr from register vy, result in vr, 	vf set to 1 if borrows"""
         pass
 
-    def shift_left(self, params: bytes):
+    def shift_left(self, reg_x: int, reg_y: int):
         """8r0e	shift register vr left, bit 7 goes into register vf"""
         pass
 
@@ -293,4 +320,4 @@ if __name__ == "__main__":
     for val in emulator.register_dump:
         print(val)
 
-    print(hex(emulator._memory[0x200]))
+    emulator.emulate_cycle()
