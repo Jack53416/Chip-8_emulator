@@ -1,7 +1,10 @@
 import os
 import struct
+import random
 
 from typing import List, Generator, Dict, Callable
+
+from registerManager import RegisterManager
 
 
 class Chip8(object):
@@ -43,7 +46,7 @@ class Chip8(object):
         self._stackPtr: int = 0
 
         self._memory: bytearray = bytearray(Chip8.MEM_SIZE)
-        self._registers: List[bytes] = [bytes(Chip8.REG_SIZE)] * Chip8.REG_NUM
+        self._registers: RegisterManager = RegisterManager(self.REG_NUM, self.REG_SIZE * 8)
         self._decoder: Dict[int, Callable[[int], None]] = {}
 
         self._init()
@@ -107,7 +110,7 @@ class Chip8(object):
 
     @property
     def register_dump(self) -> Generator[str, None, None]:
-        return ("V{} --- {:02x}".format(idx, int.from_bytes(val, byteorder='big'))
+        return ("V{} --- {:02x}".format(idx, val)
                 for idx, val in enumerate(self._registers))
 
     def load_rom(self, file_name: str):
@@ -118,10 +121,10 @@ class Chip8(object):
     def emulate_cycle(self):
         self._fetch()
         self._decode()
-        self._pc = self._pc + self.INSTRUCTION_SIZE
 
     def _fetch(self):
         self._opCode = bytes(self._memory[self._pc: self._pc + self.INSTRUCTION_SIZE])
+        self._pc += self.INSTRUCTION_SIZE
 
     def _decode(self):
         code = self._opCode[0] >> 4
@@ -201,62 +204,87 @@ class Chip8(object):
         # Error Handling !!
         reg = params[0] & 0x0F
         const = params[1]
-        self._registers[reg] = bytes([const])
+        self._registers[reg] = const
 
-    def add_constant(self, params: bytes):
+    def add_constant(self, reg: int, const: int):
         """7rxx add constant to register r, No carry generated"""
-        pass
+
+        self._registers[reg] += const
 
     def mov_reg(self, reg_x: int, reg_y: int):
-        """8ry0 move register vy into vr"""
-        pass
+        """8xy0 move register vy into vx"""
+        
+        self._registers[reg_x] = self._registers[reg_y]
 
     def logic_or(self, reg_x: int, reg_y: int):
-        """8ry1 OR register vy into register vx"""
-        pass
+        """8xy1 OR register vy into register vx"""
+        
+        self._registers[reg_x] |= self._registers[reg_y]
 
     def logic_and(self, reg_x: int, reg_y: int):
-        """8ry2 AND register vy into register vx"""
-        pass
+        """8xy2 AND register vy into register vx"""
+        
+        self._registers[reg_x] &= self._registers[reg_y]
 
     def logic_xor(self, reg_x: int, reg_y: int):
-        """8ry3 XOR register ry into register rx"""
+        """8xy3 XOR register ry into register rx"""
+        
+        self._registers[reg_x] ^= self._registers[reg_y]
 
     def add(self, reg_x: int, reg_y: int):
         """8ry4 add register vy to vr,carry in vf """
-        pass
+        
+        self._registers[reg_x] += self._registers[reg_y]
+        if self._registers.overflow:
+            self._registers[0xF] = 1
 
     def sub(self, reg_x: int, reg_y: int):
         """8ry5 subtract register vy from vr,borrow in vf, 	vf set to 1 if borrows"""
-        pass
+        
+        self._registers[reg_x] -= self._registers[reg_y]
+        if self._registers.overflow:
+            self._registers[0xF] = 1
 
     def shift_right(self, reg_x: int, reg_y: int):
         """8r06 shift register vy right, bit 0 goes into register vf"""
-        pass
+
+        self._registers[0xF] = self._registers[reg_x] & 0x01
+        self._registers[reg_x] >>= 1
 
     def rsb(self, reg_x: int, reg_y: int):
-        """8ry7 subtract register vr from register vy, result in vr, 	vf set to 1 if borrows"""
-        pass
+        """8ry7 subtract register vr from register vy, result in vr, vf set to 1 if borrows"""
+
+        self._registers[reg_x] = self._registers[reg_y] - self._registers[reg_x]
+        if self._registers.overflow:
+            self._registers[0xF] = 1
 
     def shift_left(self, reg_x: int, reg_y: int):
         """8r0e	shift register vr left, bit 7 goes into register vf"""
-        pass
 
-    def skip_on_reg_neq(self, params: bytes):
+        self._registers[0xF] = self._registers[reg_x] & 0x80
+        self._registers[reg_x] <<= 1
+
+    def skip_on_reg_neq(self, reg_x: int, reg_y: int):
         """9ry0 skip if register rx != register ry"""
-        pass
 
-    def mvi(self, params: bytes):
+        if self._registers[reg_x] != self._registers[reg_y]:
+            self._pc += self.INSTRUCTION_SIZE
+
+    def mvi(self, value: int):
         """axxx Load index register with constant xxx"""
-        pass
 
-    def jump_i(self, params: bytes):
+        # What about overflow ?
+        self._index = value
+
+    def jump_i(self, address: int):
         """bxxx Jump to address xxx+register v0"""
-        pass
 
-    def rand(self, params: bytes):
+        self._pc = address + self._registers[0]
+
+    def rand(self, reg: int, const: int):
         """crxx vr = random number less than or equal to xxx"""
-        pass
+
+        self._registers[reg] = random.randint(0, const)
 
     def draw_sprite(self, params: bytes):
         """drys Draw sprite at screen location rx,ry height s"""
@@ -286,25 +314,38 @@ class Chip8(object):
         """fr18 set the sound timer to vr"""
         pass
 
-    def add_index(self, params: bytes):
+    def add_index(self, reg: int):
         """fr1e add register vr to the index register"""
-        pass
+
+        self._index += self._registers[reg]
 
     def font(self, params: bytes):
         """fr29 point I to the sprite for hexadecimal character in vr"""
         pass
 
-    def store_bcd(self, params: bytes):
+    def store_bcd(self, reg: int):
         """fr33 store the bcd representation of register vr at location I,I+1,I+2"""
-        pass
 
-    def store_regs(self, params: bytes):
+        value = self._registers[reg]
+        h = value // 100
+        t = (value % 100) // 10
+        d = value % 100 % 10
+
+        self._memory[self._index] = h
+        self._memory[self._index + 1] = t
+        self._memory[self._index + 2] = d
+
+    def store_regs(self, reg: int):
         """fr55 store registers v0-vr at location I onwards"""
-        pass
 
-    def load_regs(self, params: bytes):
+        for idx, reg_val in enumerate(self._registers[0: reg + 1]):
+            self._memory[self._index + idx] = reg_val
+
+    def load_regs(self, reg: int):
         """fx65 load registers v0-vr from location I onwards"""
-        pass
+
+        for i in range(0, reg + 1):
+            self._registers[i] = self._memory[self._index + i]
 
 
 if __name__ == "__main__":
