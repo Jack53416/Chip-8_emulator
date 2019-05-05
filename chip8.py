@@ -1,10 +1,19 @@
 import os
 import struct
 import random
+from functools import partial
 
 from typing import List, Generator, Dict, Callable
 
 from registerManager import RegisterManager
+
+
+def print_cb_name(fun):
+
+    def wrapper(*args):
+        print(args[1].__name__, end=" ")
+        return fun(*args)
+    return wrapper
 
 
 class Chip8(object):
@@ -55,51 +64,52 @@ class Chip8(object):
         self._memory[0:0x50] = Chip8.FONT_SET
 
         self._decoder = {
+            0x0: lambda: self._decoder[self._opCode[1]](),
             0x00e0: self.clear_scr,
             0x00ee: self.ret_from_sub,
 
-            0x1: self.jump,                 # 1nnn
-            0x2: self.jsr,                  # 2nnn
-            0x3: self.skip_equal,           # 3xkk
-            0x4: self.skip_nequal,          # 4xkk
-            0x5: self.skip_reg_equal,       # 5xy0
-            0x6: self.mov,                  # 6xkk
-            0x7: self.add_constant,         # 7xkk
+            0x1: partial(self._decode_address, self.jump),                # 0x1nnn
+            0x2: partial(self._decode_address, self.jsr),                 # 0x2nnn
+            0x3: partial(self._decode_reg_const, self.skip_equal),        # 0x3xkk
+            0x4: partial(self._decode_reg_const, self.skip_nequal),       # 0x4xkk
+            0x5: partial(self._decode_two_regs, self.skip_reg_equal),     # 0x5xy0
+            0x6: partial(self._decode_reg_const, self.mov),               # 0x6xkk
+            0x7: partial(self._decode_reg_const, self.add_constant),      # 0x7xkk
 
             0x8: self._decode_arithmetic,
 
-            0x80: self.mov_reg,             # 0x8xy0
-            0x81: self.logic_or,            # 0x8xy1
-            0x82: self.logic_and,           # 0x8xy2
-            0x83: self.logic_xor,           # 0x8xy3
-            0x84: self.add,                 # 0x8xy4
-            0x85: self.sub,                 # 0x8xy5
-            0x86: self.shift_right,         # 0x8xy6
-            0x87: self.rsb,                 # 0x8xy7
-            0x8e: self.shift_left,          # 0x8xyE
+            0x80: self.mov_reg,                                           # 0x8xy0
+            0x81: self.logic_or,                                          # 0x8xy1
+            0x82: self.logic_and,                                         # 0x8xy2
+            0x83: self.logic_xor,                                         # 0x8xy3
+            0x84: self.add,                                               # 0x8xy4
+            0x85: self.sub,                                               # 0x8xy5
+            0x86: self.shift_right,                                       # 0x8xy6
+            0x87: self.rsb,                                               # 0x8xy7
+            0x8e: self.shift_left,                                        # 0x8xyE
 
-            0x9: self.skip_on_reg_neq,      # 0x9xy0
-            0xa: self.mvi,                  # 0xAnnn
-            0xb: self.jump_i,               # 0xBnnn
-            0xc: self.rand,                 # 0xCxkk
-            0xd: self.draw_sprite,          # 0xDxyn
+            0x9: partial(self._decode_two_regs, self.skip_on_reg_neq),    # 0x9xy0
+            0xa: partial(self._decode_address, self.mvi),                 # 0xAnnn
+            0xb: partial(self._decode_address, self.jump_i),              # 0xBnnn
+            0xc: partial(self._decode_reg_const, self.rand),              # 0xCxkk
+            0xd: self._decode_draw,                                       # 0xDxyn
 
             0xE: self._decode_keys,
 
-            0xE9e: self.skip_if_pressed,    # 0xEx9E
-            0xEa1: self.skip_if_npressed,   # 0xExA1
+            0xE9e: self.skip_if_pressed,                                  # 0xEx9E
+            0xEa1: self.skip_if_npressed,                                 # 0xExA1
 
             0xf: self._decode_system,
 
-            0xf07: self.get_delay_timer,    # 0xFx07
-            0xf0a: self.await_key,          # 0xFx0A
-            0xf15: self.set_delay_timer,    # 0xFx15
-            0xf18: self.set_sound_timer,    # 0xFx18
-            0xf1e: self.add_index,          # 0xFx1E
-            0xf29: self.font,               # 0xFx29
-            0xf33: self.store_bcd,          # 0xFx33
-            0xf55: self.store_regs,         # 0xFx55
-            0xf65: self.load_regs,          # 0xFx65
+            0xf07: self.get_delay_timer,                                  # 0xFx07
+            0xf0a: self.await_key,                                        # 0xFx0A
+            0xf15: self.set_delay_timer,                                  # 0xFx15
+            0xf18: self.set_sound_timer,                                  # 0xFx18
+            0xf1e: self.add_index,                                        # 0xFx1E
+            0xf29: self.font,                                             # 0xFx29
+            0xf33: self.store_bcd,                                        # 0xFx33
+            0xf55: self.store_regs,                                       # 0xFx55
+            0xf65: self.load_regs,                                        # 0xFx65
         }
 
     @property
@@ -129,23 +139,50 @@ class Chip8(object):
     def _decode(self):
         code = self._opCode[0] >> 4
         try:
-            self._decoder[code](self._opCode)
+            self._decoder[code]()
         except KeyError:
             # invalid instruction
-            print("Invalid op-code!!")
-            pass
+            print("Invalid op-code: {}!!".format(self._opCode.hex()))
         except TypeError:
             # invalid nr of arguments
             print("Invalid op-code parameters!")
-            pass
+
+    @print_cb_name
+    def _decode_two_regs(self, instruction: Callable[[int, int], None]):
+        reg_x = self._opCode[0] & 0x0F
+        reg_y = self._opCode[1] >> 4
+
+        print("{:x},  {:x}".format(reg_x, reg_y))
+        instruction(reg_x, reg_y)
+
+    @print_cb_name
+    def _decode_reg_const(self, instruction: Callable[[int, int], None]):
+        reg = self._opCode[0] & 0x0F
+        const = self._opCode[1]
+
+        print("{:x},  {:x}".format(reg, const))
+        instruction(reg, const)
+
+    @print_cb_name
+    def _decode_address(self, instruction: Callable[[int], None]):
+
+        address = ((self._opCode[0] & 0x0F) << 8) | self._opCode[1]
+
+        print("{:x}".format(address))
+        instruction(address)
+
+    def _decode_draw(self):
+        x = self._opCode[0] & 0x0F
+        y = (self._opCode[1] & 0xF0) >> 4
+        n_bytes = self._opCode[1] & 0x0F
+
+        self.draw_sprite(x, y, n_bytes)
 
     def _decode_arithmetic(self):
-        x: int = self._opCode[0] & 0x0F
-        y: int = self._opCode[1] >> 4
 
         code = 0x8 << 4 | (self._opCode[1] & 0x0F)
 
-        return self._decoder[code](x, y)
+        return self._decode_two_regs(self._decoder[code])
 
     def _decode_keys(self):
         code = 0xE << 4 | self._opCode[1]
@@ -154,13 +191,14 @@ class Chip8(object):
         return self._decoder[code](x)
 
     def _decode_system(self):
-        code = 0xF << 4 | self._opCode[1]
+        code = 0xF << 8 | self._opCode[1]
         x = self._opCode[0] & 0x0F
 
         return self._decoder[code](x)
 
     def clear_scr(self):
         """00E0 Clear the screen"""
+        print("Clear Scr")
         pass
 
     def ret_from_sub(self):
@@ -199,11 +237,10 @@ class Chip8(object):
         if self._registers[r1] == self._registers[r2]:
             self._pc = self._pc + 2
 
-    def mov(self, params: bytes):
+    def mov(self, reg: int, const: int):
         """6rxx move constant xxx to register r"""
         # Error Handling !!
-        reg = params[0] & 0x0F
-        const = params[1]
+
         self._registers[reg] = const
 
     def add_constant(self, reg: int, const: int):
@@ -286,16 +323,19 @@ class Chip8(object):
 
         self._registers[reg] = random.randint(0, const)
 
-    def draw_sprite(self, params: bytes):
+    def draw_sprite(self, x: int, y: int, n_bytes: int):
         """drys Draw sprite at screen location rx,ry height s"""
+        print("Draw Sprite")
         pass
 
     def skip_if_pressed(self, params: bytes):
         """ek9e skip if key (register rk) pressed"""
+        print("skip if pressed")
         pass
 
     def skip_if_npressed(self, params: bytes):
         """eka1 skip if key (register rk) not pressed"""
+        print("skip if not pressed")
         pass
 
     def get_delay_timer(self, params: bytes):
@@ -361,4 +401,5 @@ if __name__ == "__main__":
     for val in emulator.register_dump:
         print(val)
 
-    emulator.emulate_cycle()
+    while True:
+        emulator.emulate_cycle()
