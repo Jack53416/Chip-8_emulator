@@ -1,12 +1,13 @@
 import os
 import struct
 import random
+import time
 from functools import partial
 
 from typing import List, Generator, Dict, Callable
 
 from registerManager import RegisterManager
-
+from hwTimer import  HwTimer
 
 def print_cb_name(fun):
 
@@ -48,8 +49,8 @@ class Chip8(object):
         self._pc: int = 0x200
         self._index: int = 0
 
-        self._delayTimer: int = 0
-        self._soundTimer: int = 0
+        self._delayTimer: HwTimer = HwTimer()
+        self._soundTimer: HwTimer = HwTimer()
 
         self._stack: List[int] = [0] * 16
         self._stackPtr: int = 0
@@ -185,7 +186,7 @@ class Chip8(object):
         return self._decode_two_regs(self._decoder[code])
 
     def _decode_keys(self):
-        code = 0xE << 4 | self._opCode[1]
+        code = 0xE << 8 | self._opCode[1]
         x = self._opCode[0] & 0x0F
 
         return self._decoder[code](x)
@@ -338,21 +339,36 @@ class Chip8(object):
         print("skip if not pressed")
         pass
 
-    def get_delay_timer(self, params: bytes):
+    def get_delay_timer(self, reg: int):
         """fr07 get delay timer into vr"""
-        pass
+        time.sleep(0.1)
+        self._registers[reg] = self._delayTimer.value
 
     def await_key(self, params: bytes):
         """fr0a wait for for keypress,put key in register vr"""
         pass
 
-    def set_delay_timer(self, params: bytes):
+    def set_delay_timer(self, reg: int):
         """set the delay timer to vr"""
-        pass
+        print("{} {}".format("set_delay_timer", reg))
+        try:
+            self._delayTimer.value = self._registers[reg]
+            self._delayTimer.start()
+        except RuntimeError:
+            self._delayTimer = HwTimer()
+            self._delayTimer.value = self._registers[reg]
+            self._delayTimer.start()
 
-    def set_sound_timer(self, params: bytes):
+    def set_sound_timer(self, reg: int):
         """fr18 set the sound timer to vr"""
-        pass
+
+        try:
+            self._soundTimer.value = self._registers[reg]
+            self._soundTimer.start()
+        except RuntimeError:
+            self._soundTimer = HwTimer()
+            self._soundTimer.value = self._registers[reg]
+            self._soundTimer.start()
 
     def add_index(self, reg: int):
         """fr1e add register vr to the index register"""
