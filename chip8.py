@@ -8,7 +8,7 @@ from typing import List, Generator, Dict, Callable
 
 from display import Display
 from registerManager import RegisterManager
-from hwTimer import  HwTimer
+from hwTimer import HwTimer
 
 
 def print_cb_name(fun):
@@ -134,7 +134,6 @@ class Chip8(object):
 
     def emulate_cycle(self):
         self._fetch()
-        print(self._opCode.hex())
         self._decode()
 
     def _fetch(self):
@@ -289,8 +288,8 @@ class Chip8(object):
     def shift_right(self, reg_x: int, reg_y: int):
         """8r06 shift register vy right, bit 0 goes into register vf"""
 
-        self._registers[0xF] = self._registers[reg_x] & 0x01
-        self._registers[reg_x] >>= 1
+        self._registers[0xF] = self._registers[reg_y] & 0x01
+        self._registers[reg_x] = self._registers[reg_y] >> 1
 
     def rsb(self, reg_x: int, reg_y: int):
         """8ry7 subtract register vr from register vy, result in vr, vf set to 1 if borrows"""
@@ -302,8 +301,8 @@ class Chip8(object):
     def shift_left(self, reg_x: int, reg_y: int):
         """8r0e	shift register vr left, bit 7 goes into register vf"""
 
-        self._registers[0xF] = self._registers[reg_x] & 0x80
-        self._registers[reg_x] <<= 1
+        self._registers[0xF] = self._registers[reg_y] & 0x80
+        self._registers[reg_x] = self._registers[reg_y] << 1
 
     def skip_on_reg_neq(self, reg_x: int, reg_y: int):
         """9ry0 skip if register rx != register ry"""
