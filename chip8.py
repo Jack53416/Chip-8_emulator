@@ -6,8 +6,10 @@ from functools import partial
 
 from typing import List, Generator, Dict, Callable
 
+from display import Display
 from registerManager import RegisterManager
 from hwTimer import  HwTimer
+
 
 def print_cb_name(fun):
 
@@ -59,6 +61,7 @@ class Chip8(object):
         self._registers: RegisterManager = RegisterManager(self.REG_NUM, self.REG_SIZE * 8)
         self._decoder: Dict[int, Callable[[int], None]] = {}
 
+        self._display = Display(64, 32)
         self._init()
 
     def _init(self):
@@ -131,6 +134,7 @@ class Chip8(object):
 
     def emulate_cycle(self):
         self._fetch()
+        print(self._opCode.hex())
         self._decode()
 
     def _fetch(self):
@@ -199,8 +203,7 @@ class Chip8(object):
 
     def clear_scr(self):
         """00E0 Clear the screen"""
-        print("Clear Scr")
-        pass
+        self._display.clear()
 
     def ret_from_sub(self):
         """00EE return from subroutine call"""
@@ -324,10 +327,14 @@ class Chip8(object):
 
         self._registers[reg] = random.randint(0, const)
 
-    def draw_sprite(self, x: int, y: int, n_bytes: int):
+    def draw_sprite(self, reg_x: int, reg_y: int, n_bytes: int):
         """drys Draw sprite at screen location rx,ry height s"""
-        print("Draw Sprite")
-        pass
+        sprite = self._memory[self._index: self._index + n_bytes]
+        x, y = self._registers[reg_x], self._registers[reg_y]
+        self._display.draw(x, y, sprite)
+        if self._display.collision:
+            self._registers[0xF] = 0x01
+        print(self._display)
 
     def skip_if_pressed(self, params: bytes):
         """ek9e skip if key (register rk) pressed"""
@@ -375,9 +382,13 @@ class Chip8(object):
 
         self._index += self._registers[reg]
 
-    def font(self, params: bytes):
+    def font(self, reg: int):
         """fr29 point I to the sprite for hexadecimal character in vr"""
-        pass
+        if self._registers[reg] > 0xF:
+            raise ValueError("Invalid font!")
+
+        val = self._registers[reg] * 5
+        self._index = val
 
     def store_bcd(self, reg: int):
         """fr33 store the bcd representation of register vr at location I,I+1,I+2"""
