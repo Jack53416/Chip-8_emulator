@@ -12,6 +12,7 @@ class Display(object):
         self._onDraw = None
 
     def draw(self, x: int, y: int, sprite: List[int]):
+
         idx, r = divmod(x, BYTE_SIZE)
 
         mask = 0xFF << (BYTE_SIZE - r) & 0xFF if r > 0 else 0x0

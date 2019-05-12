@@ -1,6 +1,7 @@
 import os
 import struct
 import random
+import sys
 import time
 from functools import partial
 
@@ -14,7 +15,7 @@ from hwTimer import HwTimer
 def print_cb_name(fun):
 
     def wrapper(*args):
-        print(args[1].__name__, end=" ")
+        #print(args[1].__name__, end=" ")
         return fun(*args)
     return wrapper
 
@@ -62,6 +63,7 @@ class Chip8(object):
         self._decoder: Dict[int, Callable[[int], None]] = {}
 
         self._display = Display(64, 32)
+        self._drawCount: int = 0
         self._init()
 
     def _init(self):
@@ -133,8 +135,15 @@ class Chip8(object):
             self._memory[0x200:0x200 + len(rom)] = rom
 
     def emulate_cycle(self):
+        time.sleep(0.001)
         self._fetch()
         self._decode()
+        if self._drawCount >= 1:
+            print(self._display)
+            for i in range(self._display.height*8):
+                sys.stdout.write("\033[F")
+            sys.stdout.write("\r")
+            self._drawCount = 0
 
     def _fetch(self):
         self._opCode = bytes(self._memory[self._pc: self._pc + self.INSTRUCTION_SIZE])
@@ -156,7 +165,7 @@ class Chip8(object):
         reg_x = self._opCode[0] & 0x0F
         reg_y = self._opCode[1] >> 4
 
-        print("{:x},  {:x}".format(reg_x, reg_y))
+        # print("{:x},  {:x}".format(reg_x, reg_y))
         instruction(reg_x, reg_y)
 
     @print_cb_name
@@ -164,7 +173,7 @@ class Chip8(object):
         reg = self._opCode[0] & 0x0F
         const = self._opCode[1]
 
-        print("{:x},  {:x}".format(reg, const))
+        # print("{:x},  {:x}".format(reg, const))
         instruction(reg, const)
 
     @print_cb_name
@@ -172,7 +181,7 @@ class Chip8(object):
 
         address = ((self._opCode[0] & 0x0F) << 8) | self._opCode[1]
 
-        print("{:x}".format(address))
+        # print("{:x}".format(address))
         instruction(address)
 
     def _decode_draw(self):
@@ -283,26 +292,30 @@ class Chip8(object):
         
         self._registers[reg_x] -= self._registers[reg_y]
         if self._registers.overflow:
+            self._registers[0xF] = 0
+        else:
             self._registers[0xF] = 1
 
     def shift_right(self, reg_x: int, reg_y: int):
         """8r06 shift register vy right, bit 0 goes into register vf"""
 
-        self._registers[0xF] = self._registers[reg_y] & 0x01
-        self._registers[reg_x] = self._registers[reg_y] >> 1
+        self._registers[0xF] = self._registers[reg_x] & 0x01
+        self._registers[reg_x] = self._registers[reg_x] >> 1
 
     def rsb(self, reg_x: int, reg_y: int):
         """8ry7 subtract register vr from register vy, result in vr, vf set to 1 if borrows"""
 
         self._registers[reg_x] = self._registers[reg_y] - self._registers[reg_x]
         if self._registers.overflow:
+            self._registers[0xF] = 0
+        else:
             self._registers[0xF] = 1
 
     def shift_left(self, reg_x: int, reg_y: int):
         """8r0e	shift register vr left, bit 7 goes into register vf"""
 
-        self._registers[0xF] = self._registers[reg_y] & 0x80
-        self._registers[reg_x] = self._registers[reg_y] << 1
+        self._registers[0xF] = (self._registers[reg_x] & 0x80) >> 7
+        self._registers[reg_x] = self._registers[reg_x] << 1
 
     def skip_on_reg_neq(self, reg_x: int, reg_y: int):
         """9ry0 skip if register rx != register ry"""
@@ -328,21 +341,23 @@ class Chip8(object):
 
     def draw_sprite(self, reg_x: int, reg_y: int, n_bytes: int):
         """drys Draw sprite at screen location rx,ry height s"""
+        # self._registers[0xF] = 0
         sprite = self._memory[self._index: self._index + n_bytes]
         x, y = self._registers[reg_x], self._registers[reg_y]
         self._display.draw(x, y, sprite)
         if self._display.collision:
             self._registers[0xF] = 0x01
-        print(self._display)
+
+        self._drawCount += 1
 
     def skip_if_pressed(self, params: bytes):
         """ek9e skip if key (register rk) pressed"""
-        print("skip if pressed")
+        # print("skip if pressed")
         pass
 
     def skip_if_npressed(self, params: bytes):
         """eka1 skip if key (register rk) not pressed"""
-        print("skip if not pressed")
+        # print("skip if not pressed")
         pass
 
     def get_delay_timer(self, reg: int):
@@ -356,7 +371,7 @@ class Chip8(object):
 
     def set_delay_timer(self, reg: int):
         """set the delay timer to vr"""
-        print("{} {}".format("set_delay_timer", reg))
+        # print("{} {}".format("set_delay_timer", reg))
         try:
             self._delayTimer.value = self._registers[reg]
             self._delayTimer.start()

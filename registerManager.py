@@ -20,7 +20,7 @@ class RegisterManager(object):
 
     def register(self, value: int, reg_bit_count: int):
         base = 1 << reg_bit_count
-        if value > base - 1:
+        if value > base - 1 or value < 0:
             self._overflow = True
         else:
             self._overflow = False
